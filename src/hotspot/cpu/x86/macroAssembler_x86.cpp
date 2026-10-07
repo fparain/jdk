@@ -6124,7 +6124,7 @@ int MacroAssembler::store_value_type_fields_to_buf(ciValueKlass* vk, bool from_i
 
 // Move a value between registers/stack slots and update the reg_state
 bool MacroAssembler::move_helper(VMReg from, VMReg to, BasicType bt, RegState reg_state[]) {
-  assert(Arguments::is_valhalla_enabled(), "Must be");
+  assert(ValueTypePassFieldsAsArgs, "Must be");
   assert(from->is_valid() && to->is_valid(), "source and destination must be valid");
   if (reg_state[to->value()] == reg_written) {
     return true; // Already written
@@ -6188,7 +6188,7 @@ bool MacroAssembler::move_helper(VMReg from, VMReg to, BasicType bt, RegState re
 // Calculate the extra stack space required for packing or unpacking value
 // args and adjust the stack pointer (see MacroAssembler::remove_frame).
 int MacroAssembler::extend_stack_for_value_args(int args_on_stack) {
-  assert(Arguments::is_valhalla_enabled(), "Must be");
+  assert(ValueTypePassFieldsAsArgs, "Must be");
   int sp_inc = args_on_stack * VMRegImpl::stack_slot_size;
   sp_inc = align_up(sp_inc, StackAlignmentInBytes);
   assert(sp_inc > 0, "sanity");
