@@ -4984,10 +4984,15 @@ bool LibraryCallKit::inline_newArray(bool null_free, bool atomic) {
 // public static native boolean ValueClass::isNullRestrictedArray(Object array);
 // public static native boolean ValueClass::isAtomicArray(Object array);
 bool LibraryCallKit::inline_getArrayProperties(ArrayPropertiesCheck check) {
+  if (!Arguments::is_valhalla_enabled()) {
+    Node* res = gvn().transform(intcon(0));
+    set_result(res);
+    return true;
+  }
   Node* array = argument(0);
 
   Node* bol;
-  switch(check) {
+  switch (check) {
     case IsFlat:
       if (UseArrayFlattening) {
         bol = flat_array_test(array);
@@ -4998,76 +5003,64 @@ bool LibraryCallKit::inline_getArrayProperties(ArrayPropertiesCheck check) {
       }
       break;
   case IsNullRestricted:
-      if (Arguments::is_valhalla_enabled()) {
-        bol = null_free_array_test(array);
-      } else {
-        Node* res = gvn().transform(intcon(0));
-        set_result(res);
-        return true;
-      }
+      bol = null_free_array_test(array);
       break;
     case IsAtomic: {
-      if (!Arguments::is_valhalla_enabled()) {
-        Node* res = gvn().transform(intcon(0));
-        set_result(res);
-        return true;
-      } else {
-        // See conditions in JVM_IsAtomicArray
-        // 1. If not flat, then atomic, or else...
-        RegionNode* atomic_region = new RegionNode(1);
-        RegionNode* non_atomic_region = new RegionNode(1);
-        Node* is_flat_bol = UseArrayFlattening ? flat_array_test(array) : intcon(0);
-        IfNode* iff_is_flat = create_and_xform_if(control(), is_flat_bol, PROB_FAIR, COUNT_UNKNOWN);
-        atomic_region->add_req(_gvn.transform(new IfFalseNode(iff_is_flat)));
-        set_control(_gvn.transform(new IfTrueNode(iff_is_flat)));
+      // See conditions in JVM_IsAtomicArray
+      // 1. If not flat, then atomic, or else...
+      RegionNode* atomic_region = new RegionNode(1);
+      RegionNode* non_atomic_region = new RegionNode(1);
+      Node* is_flat_bol = UseArrayFlattening ? flat_array_test(array) : intcon(0);
+      IfNode* iff_is_flat = create_and_xform_if(control(), is_flat_bol, PROB_FAIR, COUNT_UNKNOWN);
+      atomic_region->add_req(_gvn.transform(new IfFalseNode(iff_is_flat)));
+      set_control(_gvn.transform(new IfTrueNode(iff_is_flat)));
 
-        // 2. ...if the layout is atomic, then atomic, or else...
-        Node* layout_kind = atomic_layout_array_test_and_get_layout_kind(array, atomic_region);
+      // 2. ...if the layout is atomic, then atomic, or else...
+      Node* layout_kind = atomic_layout_array_test_and_get_layout_kind(array, atomic_region);
 
-        // 3. ...if the element type is naturally atomic and null-free OR empty and nullable, then atomic, or else...
-        Node* array_klass = load_object_klass(array);
-        int element_klass_offset = in_bytes(ObjArrayKlass::element_klass_offset());
-        Node* array_element_klass_addr = off_heap_plus_addr(array_klass, element_klass_offset);
-        Node* array_element_klass = _gvn.transform(LoadKlassNode::make(_gvn, immutable_memory(), array_element_klass_addr, _gvn.type(array_klass)->is_klassptr()));
-        int klass_flags_offset = in_bytes(InstanceKlass::misc_flags_offset() + InstanceKlassFlags::flags_offset());
-        Node* array_element_klass_flags_addr = off_heap_plus_addr(array_element_klass, klass_flags_offset);
-        Node* array_element_klass_flags = make_load(control(), array_element_klass_flags_addr, TypeInt::INT, T_INT, MemNode::unordered);
+      // 3. ...if the element type is naturally atomic and null-free OR empty and nullable, then atomic, or else...
+      Node* array_klass = load_object_klass(array);
+      int element_klass_offset = in_bytes(ObjArrayKlass::element_klass_offset());
+      Node* array_element_klass_addr = off_heap_plus_addr(array_klass, element_klass_offset);
+      Node* array_element_klass = _gvn.transform(LoadKlassNode::make(_gvn, immutable_memory(), array_element_klass_addr, _gvn.type(array_klass)->is_klassptr()));
+      int klass_flags_offset = in_bytes(InstanceKlass::misc_flags_offset() + InstanceKlassFlags::flags_offset());
+      Node* array_element_klass_flags_addr = off_heap_plus_addr(array_element_klass, klass_flags_offset);
+      Node* array_element_klass_flags = make_load(control(), array_element_klass_flags_addr, TypeInt::INT, T_INT, MemNode::unordered);
 
-        // Here, layout can only be non-atomic, otherwise atomic_layout_array_test_and_get_layout_kind already decides the array to be atomic.
-        Node* is_null_free_cmp = _gvn.transform(new CmpINode(layout_kind, intcon(static_cast<jint>(LayoutKind::NULL_FREE_NON_ATOMIC_FLAT))));
-        Node* is_null_free_bol = _gvn.transform(new BoolNode(is_null_free_cmp, BoolTest::eq));
-        IfNode* iff_is_null_free_bol = create_and_xform_if(control(), is_null_free_bol, PROB_FAIR, COUNT_UNKNOWN);
-        Node* is_null_free_ctl = _gvn.transform(new IfTrueNode(iff_is_null_free_bol));
-        Node* is_nullable_ctl = _gvn.transform(new IfFalseNode(iff_is_null_free_bol));
+      // Here, layout can only be non-atomic, otherwise atomic_layout_array_test_and_get_layout_kind already decides the array to be atomic.
+      Node* is_null_free_cmp = _gvn.transform(new CmpINode(layout_kind, intcon(static_cast<jint>(LayoutKind::NULL_FREE_NON_ATOMIC_FLAT))));
+      Node* is_null_free_bol = _gvn.transform(new BoolNode(is_null_free_cmp, BoolTest::eq));
+      IfNode* iff_is_null_free_bol = create_and_xform_if(control(), is_null_free_bol, PROB_FAIR, COUNT_UNKNOWN);
+      Node* is_null_free_ctl = _gvn.transform(new IfTrueNode(iff_is_null_free_bol));
+      Node* is_nullable_ctl = _gvn.transform(new IfFalseNode(iff_is_null_free_bol));
 
-        Node* is_naturally_atomic_flag = _gvn.transform(new AndINode(array_element_klass_flags, intcon(InstanceKlassFlags::_misc_is_naturally_atomic)));
-        Node* is_naturally_atomic_cmp = _gvn.transform(new CmpINode(is_naturally_atomic_flag, intcon(0)));
-        Node* is_naturally_atomic_bol = _gvn.transform(new BoolNode(is_naturally_atomic_cmp, BoolTest::ne));
-        IfNode* iff_is_naturally_atomic = create_and_xform_if(is_null_free_ctl, is_naturally_atomic_bol, PROB_FAIR, COUNT_UNKNOWN);
-        Node* is_naturally_atomic_ctl = _gvn.transform(new IfTrueNode(iff_is_naturally_atomic));
-        Node* is_not_naturally_atomic_ctl = _gvn.transform(new IfFalseNode(iff_is_naturally_atomic));
-        atomic_region->add_req(is_naturally_atomic_ctl);
-        non_atomic_region->add_req(is_not_naturally_atomic_ctl);
+      Node* is_naturally_atomic_flag = _gvn.transform(new AndINode(array_element_klass_flags, intcon(InstanceKlassFlags::_misc_is_naturally_atomic)));
+      Node* is_naturally_atomic_cmp = _gvn.transform(new CmpINode(is_naturally_atomic_flag, intcon(0)));
+      Node* is_naturally_atomic_bol = _gvn.transform(new BoolNode(is_naturally_atomic_cmp, BoolTest::ne));
+      IfNode* iff_is_naturally_atomic = create_and_xform_if(is_null_free_ctl, is_naturally_atomic_bol, PROB_FAIR, COUNT_UNKNOWN);
+      Node* is_naturally_atomic_ctl = _gvn.transform(new IfTrueNode(iff_is_naturally_atomic));
+      Node* is_not_naturally_atomic_ctl = _gvn.transform(new IfFalseNode(iff_is_naturally_atomic));
+      atomic_region->add_req(is_naturally_atomic_ctl);
+      non_atomic_region->add_req(is_not_naturally_atomic_ctl);
 
-        Node* is_empty_value_type_flag = _gvn.transform(new AndINode(array_element_klass_flags, intcon(InstanceKlassFlags::_misc_is_empty_value_type)));
-        Node* is_empty_value_type_cmp = _gvn.transform(new CmpINode(is_empty_value_type_flag, intcon(0)));
-        Node* is_empty_value_type_bol = _gvn.transform(new BoolNode(is_empty_value_type_cmp, BoolTest::ne));
-        IfNode* iff_is_empty_value_type = create_and_xform_if(is_nullable_ctl, is_empty_value_type_bol, PROB_FAIR, COUNT_UNKNOWN);
-        Node* is_empty_value_type_ctl = _gvn.transform(new IfTrueNode(iff_is_empty_value_type));
-        Node* is_nonempty_value_type_ctl = _gvn.transform(new IfFalseNode(iff_is_empty_value_type));
-        atomic_region->add_req(is_empty_value_type_ctl);
-        non_atomic_region->add_req(is_nonempty_value_type_ctl);
+      Node* is_empty_value_type_flag = _gvn.transform(new AndINode(array_element_klass_flags, intcon(InstanceKlassFlags::_misc_is_empty_value_type)));
+      Node* is_empty_value_type_cmp = _gvn.transform(new CmpINode(is_empty_value_type_flag, intcon(0)));
+      Node* is_empty_value_type_bol = _gvn.transform(new BoolNode(is_empty_value_type_cmp, BoolTest::ne));
+      IfNode* iff_is_empty_value_type = create_and_xform_if(is_nullable_ctl, is_empty_value_type_bol, PROB_FAIR, COUNT_UNKNOWN);
+      Node* is_empty_value_type_ctl = _gvn.transform(new IfTrueNode(iff_is_empty_value_type));
+      Node* is_nonempty_value_type_ctl = _gvn.transform(new IfFalseNode(iff_is_empty_value_type));
+      atomic_region->add_req(is_empty_value_type_ctl);
+      non_atomic_region->add_req(is_nonempty_value_type_ctl);
 
-        // ...non-atomic, but we tried everything.
-        RegionNode* decision = new RegionNode(3);
-        decision->set_req(1, _gvn.transform(atomic_region));
-        decision->set_req(2, _gvn.transform(non_atomic_region));
-        PhiNode* result = PhiNode::make(decision, intcon(1), TypeInt::BOOL);
-        result->set_req(2, intcon(0));
-        set_control(_gvn.transform(decision));
-        set_result(_gvn.transform(result));
-        return true;
-      }
+      // ...non-atomic, but we tried everything.
+      RegionNode* decision = new RegionNode(3);
+      decision->set_req(1, _gvn.transform(atomic_region));
+      decision->set_req(2, _gvn.transform(non_atomic_region));
+      PhiNode* result = PhiNode::make(decision, intcon(1), TypeInt::BOOL);
+      result->set_req(2, intcon(0));
+      set_control(_gvn.transform(decision));
+      set_result(_gvn.transform(result));
+      return true;
     }
     default:
       ShouldNotReachHere();
