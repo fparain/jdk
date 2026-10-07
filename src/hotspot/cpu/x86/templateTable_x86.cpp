@@ -782,8 +782,8 @@ void TemplateTable::aaload() {
   Register index = rax;
 
   index_check(array, index); // kills rbx
+  __ profile_array_type<ArrayLoadData>(rbx, array, rcx);
   if (UseArrayFlattening) {
-    __ profile_array_type<ArrayLoadData>(rbx, array, rcx);
     Label is_flat_array, done;
     __ test_flat_array_oop(array, rbx, is_flat_array);
     do_oop_load(_masm,
@@ -1092,9 +1092,8 @@ void TemplateTable::aastore() {
 
   index_check_without_pop(rdx, rcx);     // kills rbx
 
-  if (UseArrayFlattening) {
-    __ profile_array_type<ArrayStoreData>(rdi, rdx, rbx);
-  }
+
+  __ profile_array_type<ArrayStoreData>(rdi, rdx, rbx);
   __ profile_multiple_element_types(rdi, rax, rbx, rcx);
 
   __ testptr(rax, rax);

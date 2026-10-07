@@ -1625,12 +1625,14 @@ template <class ArrayData> void InterpreterMacroAssembler::profile_array_type(Re
     profile_obj_type(tmp, Address(mdp, in_bytes(ArrayData::array_offset())));
 
     if (Arguments::is_valhalla_enabled()) {
-      Label not_flat;
-      test_non_flat_array_oop(array, tmp, not_flat);
+      if (UseArrayFlattening) {
+        Label not_flat;
+        test_non_flat_array_oop(array, tmp, not_flat);
 
-      set_mdp_flag_at(mdp, ArrayData::flat_array_byte_constant());
+        set_mdp_flag_at(mdp, ArrayData::flat_array_byte_constant());
 
-      bind(not_flat);
+        bind(not_flat);
+      }
 
       Label not_null_free;
       test_non_null_free_array_oop(array, tmp, not_null_free);
