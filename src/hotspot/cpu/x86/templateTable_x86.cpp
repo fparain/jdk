@@ -1092,7 +1092,6 @@ void TemplateTable::aastore() {
 
   index_check_without_pop(rdx, rcx);     // kills rbx
 
-
   __ profile_array_type<ArrayStoreData>(rdi, rdx, rbx);
   __ profile_multiple_element_types(rdi, rax, rbx, rcx);
 
@@ -2989,7 +2988,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
         patch_bytecode(Bytecodes::_fast_aputfield, bc, rbx, true, byte_no);
       }
       __ jmp(Done);
-    } else {
+    } else { // Valhalla
       __ pop(atos);
       if (is_static) {
         Label is_nullable;
@@ -3003,9 +3002,7 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
         if (UseFieldFlattening) {
           __ test_field_is_flat(flags, rscratch1, is_flat);
         }
-        if (Arguments::is_valhalla_enabled()) {
-          __ test_field_is_null_free_value_type(flags, rscratch1, null_free_reference);
-        }
+        __ test_field_is_null_free_value_type(flags, rscratch1, null_free_reference);
         pop_and_check_object(obj);
         // Store into the field
         do_oop_store(_masm, field, rax);
@@ -3014,23 +3011,19 @@ void TemplateTable::putfield_or_static_helper(int byte_no, bool is_static, Rewri
         }
         __ jmp(Done);
         __ bind(null_free_reference);
-        if (Arguments::is_valhalla_enabled()) {
-          __ null_check(rax);  // FIXME JDK-8341120
-          pop_and_check_object(obj);
-          // Store into the field
-          do_oop_store(_masm, field, rax);
-          __ jmp(rewrite_value);
-        }
+        __ null_check(rax);  // FIXME JDK-8341120
+        pop_and_check_object(obj);
+        // Store into the field
+        do_oop_store(_masm, field, rax);
+        __ jmp(rewrite_value);
         __ bind(is_flat);
         if (UseFieldFlattening) {
           pop_and_check_object(rscratch2);
           __ write_flat_field(rcx, r8, rscratch1, rscratch2, rbx, rax);
         }
-        if (Arguments::is_valhalla_enabled()) {
-          __ bind(rewrite_value);
-          if (rc == may_rewrite) {
-            patch_bytecode(Bytecodes::_fast_vputfield, bc, rbx, true, byte_no);
-          }
+        __ bind(rewrite_value);
+        if (rc == may_rewrite) {
+          patch_bytecode(Bytecodes::_fast_vputfield, bc, rbx, true, byte_no);
         }
         __ jmp(Done);
       }
@@ -3272,7 +3265,7 @@ void TemplateTable::fast_storefield_helper(Address field, Register rax, Register
         }
         __ bind(done);
       } else {
-        __ stop("ShouldNotReachHere");
+        __ should_not_reach_here();
       }
     }
     break;
@@ -3349,7 +3342,7 @@ void TemplateTable::fast_accessfield(TosState state) {
       __ read_flat_field(rcx, rax);
       __ verify_oop(rax);
     } else {
-      __ stop("Should not reach here");
+      __ should_not_reach_here();
     }
     break;
   case Bytecodes::_fast_agetfield:
