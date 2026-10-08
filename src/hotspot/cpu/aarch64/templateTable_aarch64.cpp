@@ -2785,7 +2785,9 @@ void TemplateTable::getfield_or_static(int byte_no, bool is_static, RewriteContr
       __ b(Done);
     } else {
       Label is_flat;
-      __ test_field_is_flat(flags, noreg /* temp */, is_flat);
+      if (UseFieldFlattening) {
+        __ test_field_is_flat(flags, noreg /* temp */, is_flat);
+      }
       __ load_heap_oop(r0, field, rscratch1, rscratch2);
       __ push(atos);
       if (rc == may_rewrite) {
@@ -2793,15 +2795,17 @@ void TemplateTable::getfield_or_static(int byte_no, bool is_static, RewriteContr
       }
       __ b(Done);
       __ bind(is_flat);
-      // field is flat (null-free or nullable with a null-marker)
-      __ mov(r0, obj);
-      __ read_flat_field(cache, r0);
-      __ verify_oop(r0);
-      __ push(atos);
-      if (rc == may_rewrite) {
-        patch_bytecode(Bytecodes::_fast_vgetfield, bc, r1);
+      if (UseFieldFlattening) {
+        // field is flat (null-free or nullable with a null-marker)
+        __ mov(r0, obj);
+        __ read_flat_field(cache, r0);
+        __ verify_oop(r0);
+        __ push(atos);
+        if (rc == may_rewrite) {
+          patch_bytecode(Bytecodes::_fast_vgetfield, bc, r1);
+        }
+        __ b(Done);
       }
-      __ b(Done);
     }
   }
 
@@ -3044,7 +3048,9 @@ void TemplateTable::putfield_or_static(int byte_no, bool is_static, RewriteContr
         __ b(Done);
       } else {
         Label null_free_reference, is_flat, rewrite_value;
-        __ test_field_is_flat(flags, noreg /* temp */, is_flat);
+        if (UseFieldFlattening) {
+          __ test_field_is_flat(flags, noreg /* temp */, is_flat);
+        }
         __ test_field_is_null_free_value_type(flags, noreg /* temp */, null_free_reference);
         pop_and_check_object(obj);
         // Store into the field
@@ -3063,8 +3069,10 @@ void TemplateTable::putfield_or_static(int byte_no, bool is_static, RewriteContr
         do_oop_store(_masm, field, r0, IN_HEAP);
         __ b(rewrite_value);
         __ bind(is_flat);
-        pop_and_check_object(r7);
-        __ write_flat_field(cache, off, index, flags, r7);
+        if (UseFieldFlattening) {
+          pop_and_check_object(r7);
+          __ write_flat_field(cache, off, index, flags, r7);
+        }
         __ bind(rewrite_value);
         if (rc == may_rewrite) {
           patch_bytecode(Bytecodes::_fast_vputfield, bc, r19, true, byte_no);
@@ -3287,18 +3295,26 @@ void TemplateTable::fast_storefield(TosState state)
   switch (bytecode()) {
   case Bytecodes::_fast_vputfield:
     {
-      Label is_flat, done;
-      __ test_field_is_flat(r5, noreg /* temp */, is_flat);
-      __ null_check(r0);
-      do_oop_store(_masm, field, r0, IN_HEAP);
-      __ b(done);
-      __ bind(is_flat);
-      __ load_field_entry(r4, r5);
-      // Re-shuffle registers because of VM calls calling convention
-      __ mov(r19, r1);
-      __ mov(r7, r2);
-      __ write_flat_field(r4, r19, r6, r8, r7);
-      __ bind(done);
+      if (Arguments::is_valhalla_enabled()) {
+        Label is_flat, done;
+        if (UseFieldFlattening) {
+          __ test_field_is_flat(r5, noreg /* temp */, is_flat);
+        }
+        __ null_check(r0);
+        do_oop_store(_masm, field, r0, IN_HEAP);
+        __ b(done);
+        __ bind(is_flat);
+        if (UseFieldFlattening) {
+          __ load_field_entry(r4, r5);
+          // Re-shuffle registers because of VM calls calling convention
+          __ mov(r19, r1);
+          __ mov(r7, r2);
+          __ write_flat_field(r4, r19, r6, r8, r7);
+        }
+        __ bind(done);
+      } else {
+        __ stop("ShouldNotReachHere");
+      }
     }
     break;
   case Bytecodes::_fast_aputfield:
@@ -3398,9 +3414,13 @@ void TemplateTable::fast_accessfield(TosState state)
   switch (bytecode()) {
   case Bytecodes::_fast_vgetfield:
     {
-      // field is flat
-      __ read_flat_field(r2, r0);
-      __ verify_oop(r0);
+      if (UseFieldFlattening) {
+        // field is flat
+        __ read_flat_field(r2, r0);
+        __ verify_oop(r0);
+      } else {
+        __ stop("ShouldNotReachHere");
+      }
     }
     break;
   case Bytecodes::_fast_agetfield:
@@ -4105,8 +4125,10 @@ void TemplateTable::monitorenter()
   __ null_check(r0);
 
   Label is_value_type;
-  __ ldr(rscratch1, Address(r0, oopDesc::mark_offset_in_bytes()));
-  __ test_markword_is_value_type(rscratch1, is_value_type);
+  if (Arguments::is_valhalla_enabled()) {
+    __ ldr(rscratch1, Address(r0, oopDesc::mark_offset_in_bytes()));
+    __ test_markword_is_value_type(rscratch1, is_value_type);
+  }
 
   const Address monitor_block_top(
         rfp, frame::interpreter_frame_monitor_block_top_offset * wordSize);
@@ -4211,9 +4233,11 @@ void TemplateTable::monitorenter()
   __ dispatch_next(vtos);
 
   __ bind(is_value_type);
-  __ call_VM(noreg, CAST_FROM_FN_PTR(address,
-                    InterpreterRuntime::throw_identity_exception), r0);
-  __ should_not_reach_here();
+  if (Arguments::is_valhalla_enabled()) {
+    __ call_VM(noreg, CAST_FROM_FN_PTR(address,
+                      InterpreterRuntime::throw_identity_exception), r0);
+    __ should_not_reach_here();
+  }
 }
 
 

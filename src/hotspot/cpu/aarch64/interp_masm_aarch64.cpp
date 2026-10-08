@@ -211,6 +211,7 @@ void InterpreterMacroAssembler::get_method_counters(Register method,
 }
 
 void InterpreterMacroAssembler::read_flat_field(Register entry, Register obj) {
+  assert(UseFieldFlattening, "Should be used only if field flattening is enabled");
   call_VM(obj, CAST_FROM_FN_PTR(address, InterpreterRuntime::read_flat_field), obj, entry);
 }
 
@@ -1213,19 +1214,23 @@ template <class ArrayData> void InterpreterMacroAssembler::profile_array_type(Re
     mov(tmp, array);
     profile_obj_type(tmp, Address(mdp, in_bytes(ArrayData::array_offset())));
 
-    Label not_flat;
-    test_non_flat_array_oop(array, tmp, not_flat);
+    if (Arguments::is_valhalla_enabled()) {
+      if (UseArrayFlattening) {
+        Label not_flat;
+        test_non_flat_array_oop(array, tmp, not_flat);
 
-    set_mdp_flag_at(mdp, ArrayData::flat_array_byte_constant());
+        set_mdp_flag_at(mdp, ArrayData::flat_array_byte_constant());
 
-    bind(not_flat);
+        bind(not_flat);
+      }
 
-    Label not_null_free;
-    test_non_null_free_array_oop(array, tmp, not_null_free);
+      Label not_null_free;
+      test_non_null_free_array_oop(array, tmp, not_null_free);
 
-    set_mdp_flag_at(mdp, ArrayData::null_free_array_byte_constant());
+      set_mdp_flag_at(mdp, ArrayData::null_free_array_byte_constant());
 
-    bind(not_null_free);
+      bind(not_null_free);
+    }
 
     bind(profile_continue);
   }
@@ -1298,18 +1303,22 @@ void InterpreterMacroAssembler::profile_acmp(Register mdp,
     mov(tmp, left);
     profile_obj_type(tmp, Address(mdp, in_bytes(ACmpData::left_offset())));
 
-    Label left_not_value_type;
-    test_oop_is_not_value_type(left, tmp, left_not_value_type);
-    set_mdp_flag_at(mdp, ACmpData::left_value_type_byte_constant());
-    bind(left_not_value_type);
+    if (Arguments::is_valhalla_enabled()) {
+      Label left_not_value_type;
+      test_oop_is_not_value_type(left, tmp, left_not_value_type);
+      set_mdp_flag_at(mdp, ACmpData::left_value_type_byte_constant());
+      bind(left_not_value_type);
+    }
 
     mov(tmp, right);
     profile_obj_type(tmp, Address(mdp, in_bytes(ACmpData::right_offset())));
 
-    Label right_not_value_type;
-    test_oop_is_not_value_type(right, tmp, right_not_value_type);
-    set_mdp_flag_at(mdp, ACmpData::right_value_type_byte_constant());
-    bind(right_not_value_type);
+    if (Arguments::is_valhalla_enabled()) {
+      Label right_not_value_type;
+      test_oop_is_not_value_type(right, tmp, right_not_value_type);
+      set_mdp_flag_at(mdp, ACmpData::right_value_type_byte_constant());
+      bind(right_not_value_type);
+    }
 
     bind(profile_continue);
   }
