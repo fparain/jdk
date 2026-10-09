@@ -2020,12 +2020,14 @@ void TemplateTable::if_acmp(Condition cc) {
   Label taken, not_taken;
   __ pop_ptr(r1);
 
-  __ profile_acmp(r2, r1, r0, r4);
 
-  Register is_value_type_mask = rscratch1;
-  __ mov(is_value_type_mask, markWord::value_type_pattern);
 
   if (Arguments::is_valhalla_enabled()) {
+    __ profile_acmp(r2, r1, r0, r4);
+
+    Register is_value_type_mask = rscratch1;
+    __ mov(is_value_type_mask, markWord::value_type_pattern);
+
     // The substitutability test is only necessary if r1 and r0 are not the same...
     __ cmp(r1, r0);
     __ br(Assembler::EQ, (cc == equal) ? taken : not_taken);

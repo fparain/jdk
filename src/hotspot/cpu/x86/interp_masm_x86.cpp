@@ -1705,6 +1705,7 @@ void InterpreterMacroAssembler::profile_acmp(Register mdp,
                                              Register left,
                                              Register right,
                                              Register tmp) {
+  assert(Arguments::is_valhalla_enabled(), "Profiling acmp makes sense only for value types");
   if (ProfileInterpreter) {
     Label profile_continue;
 
@@ -1714,22 +1715,18 @@ void InterpreterMacroAssembler::profile_acmp(Register mdp,
     mov(tmp, left);
     profile_obj_type(tmp, Address(mdp, in_bytes(ACmpData::left_offset())));
 
-    if (Arguments::is_valhalla_enabled()) {
-      Label left_not_value_type;
-      test_oop_is_not_value_type(left, tmp, left_not_value_type);
-      set_mdp_flag_at(mdp, ACmpData::left_value_type_byte_constant());
-      bind(left_not_value_type);
-    }
+    Label left_not_value_type;
+    test_oop_is_not_value_type(left, tmp, left_not_value_type);
+    set_mdp_flag_at(mdp, ACmpData::left_value_type_byte_constant());
+    bind(left_not_value_type);
 
     mov(tmp, right);
     profile_obj_type(tmp, Address(mdp, in_bytes(ACmpData::right_offset())));
 
-    if (Arguments::is_valhalla_enabled()) {
-      Label right_not_value_type;
-      test_oop_is_not_value_type(right, tmp, right_not_value_type);
-      set_mdp_flag_at(mdp, ACmpData::right_value_type_byte_constant());
-      bind(right_not_value_type);
-    }
+    Label right_not_value_type;
+    test_oop_is_not_value_type(right, tmp, right_not_value_type);
+    set_mdp_flag_at(mdp, ACmpData::right_value_type_byte_constant());
+    bind(right_not_value_type);
 
     bind(profile_continue);
   }

@@ -4985,7 +4985,7 @@ bool LibraryCallKit::inline_newArray(bool null_free, bool atomic) {
 // public static native boolean ValueClass::isAtomicArray(Object array);
 bool LibraryCallKit::inline_getArrayProperties(ArrayPropertiesCheck check) {
   if (!Arguments::is_valhalla_enabled()) {
-    Node* res = gvn().transform(intcon(0));
+    Node* res = gvn().transform(check == ArrayPropertiesCheck::IsAtomic ? intcon(1) : intcon(0));
     set_result(res);
     return true;
   }
@@ -5006,11 +5006,17 @@ bool LibraryCallKit::inline_getArrayProperties(ArrayPropertiesCheck check) {
       bol = null_free_array_test(array);
       break;
     case IsAtomic: {
+      if (!UseArrayFlattening) {
+        // Non-flat arrays are always atomic
+        Node* res = gvn().transform(intcon(1));
+        set_result(res);
+        return true;
+      }
       // See conditions in JVM_IsAtomicArray
       // 1. If not flat, then atomic, or else...
       RegionNode* atomic_region = new RegionNode(1);
       RegionNode* non_atomic_region = new RegionNode(1);
-      Node* is_flat_bol = UseArrayFlattening ? flat_array_test(array) : intcon(0);
+      Node* is_flat_bol = flat_array_test(array);
       IfNode* iff_is_flat = create_and_xform_if(control(), is_flat_bol, PROB_FAIR, COUNT_UNKNOWN);
       atomic_region->add_req(_gvn.transform(new IfFalseNode(iff_is_flat)));
       set_control(_gvn.transform(new IfTrueNode(iff_is_flat)));

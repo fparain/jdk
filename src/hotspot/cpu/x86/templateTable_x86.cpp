@@ -1971,10 +1971,10 @@ void TemplateTable::if_acmp(Condition cc) {
   Label taken, not_taken;
   __ pop_ptr(rdx);
 
-  __ profile_acmp(rbx, rdx, rax, rcx);
-
-  const int is_value_type_mask = markWord::value_type_pattern;
   if (Arguments::is_valhalla_enabled()) {
+    __ profile_acmp(rbx, rdx, rax, rcx);
+
+    const int is_value_type_mask = markWord::value_type_pattern;
     __ cmpoop(rdx, rax);
     __ jcc(Assembler::equal, (cc == equal) ? taken : not_taken);
 
